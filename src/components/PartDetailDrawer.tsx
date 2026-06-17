@@ -67,6 +67,9 @@ function HistoryIcon({ type }: { type: PlanHistoryType }) {
     type_changed: <Wrench className="w-3.5 h-3.5" />,
     progress_updated: <ShoppingCart className="w-3.5 h-3.5" />,
     schedule_removed: <Trash2 className="w-3.5 h-3.5" />,
+    note_created: <MessageSquare className="w-3.5 h-3.5" />,
+    note_confirmed: <CheckCircle2 className="w-3.5 h-3.5" />,
+    note_resolved: <CheckCircle2 className="w-3.5 h-3.5" />,
   }
   return icons[type]
 }
@@ -78,6 +81,9 @@ function HistoryTimelineItem({ history }: { history: PlanHistory }) {
     type_changed: 'text-blue-400 bg-blue-500/20 border-blue-500/30',
     progress_updated: 'text-cyan bg-cyan/20 border-cyan/30',
     schedule_removed: 'text-risk-critical bg-risk-critical/20 border-risk-critical/30',
+    note_created: 'text-violet-400 bg-violet-500/20 border-violet-500/30',
+    note_confirmed: 'text-sky-400 bg-sky-500/20 border-sky-500/30',
+    note_resolved: 'text-teal-400 bg-teal-500/20 border-teal-500/30',
   }
 
   const dotColorMap: Record<PlanHistoryType, string> = {
@@ -86,6 +92,9 @@ function HistoryTimelineItem({ history }: { history: PlanHistory }) {
     type_changed: 'bg-blue-500',
     progress_updated: 'bg-cyan',
     schedule_removed: 'bg-risk-critical',
+    note_created: 'bg-violet-500',
+    note_confirmed: 'bg-sky-500',
+    note_resolved: 'bg-teal-500',
   }
 
   return (

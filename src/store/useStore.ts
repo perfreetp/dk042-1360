@@ -31,6 +31,19 @@ interface RiskFilter {
   maxRemainingCycles: number | null
 }
 
+interface WeekAircraftGroup {
+  aircraft: string
+  slots: Array<{ slot: MaintenanceSlot; part: LifeLimitedPart }>
+  isOverloaded: boolean
+}
+
+interface WeekData {
+  weekStart: string
+  weekEnd: string
+  weekLabel: string
+  aircraftGroups: WeekAircraftGroup[]
+}
+
 interface AppState {
   parts: LifeLimitedPart[]
   slots: MaintenanceSlot[]
@@ -48,7 +61,7 @@ interface AppState {
   setRiskFilter: (filter: Partial<RiskFilter>) => void
   updatePartScheduleStatus: (partId: string, status: LifeLimitedPart['scheduleStatus']) => void
 
-  addSlot: (slot: Omit<MaintenanceSlot, 'id' | 'progress' | 'progressUpdatedAt'>) => void
+  addSlot: (slot: Omit<MaintenanceSlot, 'id' | 'progress' | 'progressUpdatedAt'> & { progress?: SlotProgress }) => void
   removeSlotByPartId: (partId: string) => void
   updateSlotProgress: (partId: string, progress: SlotProgress) => void
 
@@ -66,16 +79,7 @@ interface AppState {
   getSlotByPartId: (partId: string) => MaintenanceSlot | undefined
   getPlanHistoryByPartId: (partId: string) => PlanHistory[]
 
-  getWeeksData: () => Array<{
-    weekStart: string
-    weekEnd: string
-    weekLabel: string
-    aircraftGroups: Array<{
-      aircraft: string
-      slots: Array<{ slot: MaintenanceSlot; part: LifeLimitedPart }>
-      isOverloaded: boolean
-    }>
-  }>
+  getWeeksData: () => WeekData[]
 
   exportScheduleReport: () => string
 }
@@ -168,17 +172,20 @@ export const useStore = create<AppState>()(
           let newSlots: MaintenanceSlot[]
           const weekNumber = getWeekNumber(slot.plannedDate)
           const typeLabel = SLOT_TYPE_LABELS[slot.type]
+          const newProgress = slot.progress || 'pending'
 
           if (existingIdx >= 0) {
             const oldSlot = s.slots[existingIdx]
             const oldWeek = getWeekNumber(oldSlot.plannedDate)
             const oldType = SLOT_TYPE_LABELS[oldSlot.type]
+            const oldProgressLabel = PROGRESS_LABELS[oldSlot.progress]
+            const newProgressLabel = PROGRESS_LABELS[newProgress]
             newSlots = [...s.slots]
             newSlots[existingIdx] = {
               ...slot,
               id: oldSlot.id,
-              progress: oldSlot.progress,
-              progressUpdatedAt: oldSlot.progressUpdatedAt,
+              progress: newProgress,
+              progressUpdatedAt: now,
             }
 
             const historyDetails: Record<string, string> = {
@@ -187,6 +194,7 @@ export const useStore = create<AppState>()(
               plannedDate: slot.plannedDate,
             }
 
+            let historyAdded = false
             if (oldWeek !== weekNumber && oldType === typeLabel) {
               get().addPlanHistory(
                 slot.partId,
@@ -194,6 +202,7 @@ export const useStore = create<AppState>()(
                 `改期：第${oldWeek}周 → 第${weekNumber}周`,
                 { ...historyDetails, oldWeek: `第${oldWeek}周`, newWeek: `第${weekNumber}周` }
               )
+              historyAdded = true
             } else if (oldWeek === weekNumber && oldType !== typeLabel) {
               get().addPlanHistory(
                 slot.partId,
@@ -201,12 +210,23 @@ export const useStore = create<AppState>()(
                 `变更处理方式：${oldType} → ${typeLabel}`,
                 { ...historyDetails, oldType, newType: typeLabel }
               )
+              historyAdded = true
             } else if (oldWeek !== weekNumber && oldType !== typeLabel) {
               get().addPlanHistory(
                 slot.partId,
                 'schedule_rescheduled',
                 `改期：第${oldWeek}周(${oldType}) → 第${weekNumber}周(${typeLabel})`,
                 { ...historyDetails, oldWeek: `第${oldWeek}周`, newWeek: `第${weekNumber}周`, oldType, newType: typeLabel }
+              )
+              historyAdded = true
+            }
+
+            if (slot.progress && oldSlot.progress !== newProgress) {
+              get().addPlanHistory(
+                slot.partId,
+                'progress_updated',
+                `更新进度：${oldProgressLabel} → ${newProgressLabel}`,
+                { oldProgress: oldProgressLabel, newProgress: newProgressLabel }
               )
             }
           } else {
@@ -215,15 +235,15 @@ export const useStore = create<AppState>()(
               {
                 ...slot,
                 id: `s${Date.now()}`,
-                progress: 'pending',
+                progress: newProgress,
                 progressUpdatedAt: now,
               },
             ]
             get().addPlanHistory(
               slot.partId,
               'schedule_created',
-              `排入第${weekNumber}周检修窗口，标记${typeLabel}`,
-              { week: `第${weekNumber}周`, type: typeLabel, plannedDate: slot.plannedDate }
+              `排入第${weekNumber}周检修窗口，标记${typeLabel}，进度：${PROGRESS_LABELS[newProgress]}`,
+              { week: `第${weekNumber}周`, type: typeLabel, plannedDate: slot.plannedDate, progress: PROGRESS_LABELS[newProgress] }
             )
           }
 
@@ -282,28 +302,55 @@ export const useStore = create<AppState>()(
           }
         }),
 
-      addNote: (note) =>
+      addNote: (note) => {
         set((s) => ({
           notes: [...s.notes, { ...note, id: `n${Date.now()}` }],
-        })),
+        }))
+        get().addPlanHistory(
+          note.partId,
+          'note_created',
+          `新增交接备注：${note.reason}`,
+          { reason: note.reason, pendingItems: note.pendingItems }
+        )
+      },
 
-      confirmNote: (noteId, confirmedBy) =>
+      confirmNote: (noteId, confirmedBy) => {
+        const note = get().notes.find((n) => n.id === noteId)
         set((s) => ({
           notes: s.notes.map((n) =>
             n.id === noteId
               ? { ...n, status: 'confirmed' as const, confirmedBy, confirmedAt: new Date().toISOString() }
               : n
           ),
-        })),
+        }))
+        if (note) {
+          get().addPlanHistory(
+            note.partId,
+            'note_confirmed',
+            `确认交接备注`,
+            { confirmedBy, reason: note.reason }
+          )
+        }
+      },
 
-      resolveNote: (noteId, resolvedBy) =>
+      resolveNote: (noteId, resolvedBy) => {
+        const note = get().notes.find((n) => n.id === noteId)
         set((s) => ({
           notes: s.notes.map((n) =>
             n.id === noteId
               ? { ...n, status: 'resolved' as const, resolvedBy, resolvedAt: new Date().toISOString() }
               : n
           ),
-        })),
+        }))
+        if (note) {
+          get().addPlanHistory(
+            note.partId,
+            'note_resolved',
+            `处理交接备注`,
+            { resolvedBy, reason: note.reason }
+          )
+        }
+      },
 
       getFilteredParts: () => {
         const { parts, filter } = get()
@@ -390,7 +437,7 @@ export const useStore = create<AppState>()(
         const today = new Date()
         const startOfThisWeek = startOfISOWeek(today)
 
-        const weeks: AppState['getWeeksData']['return'] = []
+        const weeks: WeekData[] = []
 
         for (let w = 0; w < 8; w++) {
           const weekStart = addWeeks(startOfThisWeek, w)
@@ -438,61 +485,135 @@ export const useStore = create<AppState>()(
         const weeks = getWeeksData()
         const today = format(new Date(), 'yyyy-MM-dd HH:mm:ss')
 
+        const allRiskParts: LifeLimitedPart[] = []
+        for (const group of riskGroups) {
+          allRiskParts.push(...group.parts)
+        }
+
+        const unscheduledParts = allRiskParts.filter((p) => p.scheduleStatus === 'none')
+        const scheduledParts = allRiskParts.filter((p) => p.scheduleStatus !== 'none')
+
+        function getPartScheduleWeek(partId: string): string {
+          const slot = getSlotByPartId(partId)
+          if (!slot) return '-'
+          const slotDate = new Date(slot.plannedDate)
+          const startOfThisWeek = startOfISOWeek(new Date())
+          for (let w = 0; w < 52; w++) {
+            const ws = addWeeks(startOfThisWeek, w)
+            const we = addWeeks(ws, 1)
+            if (isWithinInterval(slotDate, { start: ws, end: we })) {
+              return `第${w + 1}周`
+            }
+          }
+          return '-'
+        }
+
+        function formatPartLine(part: LifeLimitedPart, includeSchedule: boolean = true): string {
+          const daysLeft = differenceInDays(new Date(part.calendarLifeExpiry), new Date())
+          const slot = getSlotByPartId(part.id)
+          const weekStr = slot ? getPartScheduleWeek(part.id) : '-'
+          const typeStr = slot ? SLOT_TYPE_LABELS[slot.type] : '未排程'
+          const progressStr = slot ? PROGRESS_LABELS[slot.progress] : '-'
+          return (
+            `${part.partNumber.padEnd(14)}` +
+            `${part.serialNumber.padEnd(12)}` +
+            `${padChinese(part.partName, 20)}` +
+            `${part.installedAircraft.padEnd(8)}` +
+            `${padChinese(part.installedPosition, 8)}` +
+            `${PART_STATUS_LABELS[part.status].padEnd(6)}` +
+            `${String(part.remainingCycles).padStart(8)} ` +
+            `${part.calendarLifeExpiry.padEnd(12)}` +
+            `${String(daysLeft).padStart(5)}天 ` +
+            (includeSchedule ? `${weekStr.padEnd(6)}${typeStr.padEnd(8)}${progressStr.padEnd(8)}` : '')
+          )
+        }
+
         const lines: string[] = []
-        lines.push('='.repeat(100))
+        const totalWidth = 120
+
+        lines.push('='.repeat(totalWidth))
         lines.push('  寿命件预警排程 - 交班报表')
         lines.push(`  生成时间: ${today}`)
-        lines.push(`  筛选条件: 日历≤${riskFilter.calendarDays}天 ${riskFilter.maxRemainingCycles !== null ? `| 循环≤${riskFilter.maxRemainingCycles}` : ''}`)
-        lines.push('='.repeat(100))
+        lines.push(`  筛选条件: 日历≤${riskFilter.calendarDays}天 ${riskFilter.maxRemainingCycles !== null ? `| 循环≤${riskFilter.maxRemainingCycles.toLocaleString()}` : ''}`)
+        lines.push(`  风险件总数: ${allRiskParts.length} 件 (未排程: ${unscheduledParts.length} | 已排程: ${scheduledParts.length})`)
+        lines.push('='.repeat(totalWidth))
         lines.push('')
 
-        lines.push('【一、风险预警列表】')
-        lines.push('-'.repeat(100))
-        lines.push('件号            序号        件名                    飞机    位置    状态    剩余循环  到寿日期    距今天数')
-        lines.push('-'.repeat(100))
+        lines.push('【一、风险预警列表 - 未排程件】')
+        lines.push('-'.repeat(totalWidth))
+        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度')
+        lines.push('-'.repeat(totalWidth))
 
-        let riskCount = 0
-        for (const group of riskGroups) {
-          for (const p of group.parts) {
-            const daysLeft = differenceInDays(new Date(p.calendarLifeExpiry), new Date())
-            lines.push(
-              `${p.partNumber.padEnd(16)}${p.serialNumber.padEnd(12)}${padChinese(p.partName, 24)}${p.installedAircraft.padEnd(8)}${padChinese(p.installedPosition, 8)}${PART_STATUS_LABELS[p.status].padEnd(8)}${String(p.remainingCycles).padStart(8)}  ${p.calendarLifeExpiry.padEnd(12)}${String(daysLeft).padStart(6)}天`
-            )
-            riskCount++
+        if (unscheduledParts.length === 0) {
+          lines.push('  （无未排程风险件）')
+        } else {
+          for (const p of unscheduledParts) {
+            lines.push(formatPartLine(p))
           }
         }
-        lines.push(`  合计: ${riskCount} 件`)
+        lines.push(`  小计: ${unscheduledParts.length} 件`)
         lines.push('')
 
-        lines.push('【二、未来8周检修窗口排程】')
-        lines.push('-'.repeat(100))
+        lines.push('【二、风险预警列表 - 已排程件】')
+        lines.push('-'.repeat(totalWidth))
+        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度')
+        lines.push('-'.repeat(totalWidth))
 
+        if (scheduledParts.length === 0) {
+          lines.push('  （无已排程风险件）')
+        } else {
+          for (const p of scheduledParts) {
+            lines.push(formatPartLine(p))
+          }
+        }
+        lines.push(`  小计: ${scheduledParts.length} 件`)
+        lines.push('')
+
+        lines.push('【三、未来8周检修窗口排程明细】')
+        lines.push('-'.repeat(totalWidth))
+
+        let totalScheduled = 0
         for (const week of weeks) {
-          const totalInWeek = week.aircraftGroups.reduce((sum, g) => sum + g.slots.length, 0)
-          if (totalInWeek === 0) continue
+          const weekTotal = week.aircraftGroups.reduce((sum, g) => sum + g.slots.length, 0)
+          totalScheduled += weekTotal
+          if (weekTotal === 0) continue
 
           lines.push('')
-          lines.push(`  ▶ ${week.weekLabel} (${week.weekStart} ~ ${week.weekEnd})`)
-          lines.push('  ' + '-'.repeat(96))
-          lines.push('    飞机    件号            件名                    处理方式      进度          到寿日期    剩余循环  备注')
-          lines.push('  ' + '-'.repeat(96))
+          lines.push(`  ▶ ${week.weekLabel} (${week.weekStart} ~ ${week.weekEnd})  [${weekTotal}件]`)
+          lines.push('  ' + '-'.repeat(totalWidth - 2))
+          lines.push('    件号          序号        件名                  飞机    位置    处理方式  进度      到寿日期    剩余循环  备注')
+          lines.push('  ' + '-'.repeat(totalWidth - 2))
 
           for (const ag of week.aircraftGroups) {
             for (const { slot, part } of ag.slots) {
+              const daysLeft = differenceInDays(new Date(part.calendarLifeExpiry), new Date())
               lines.push(
-                `    ${ag.aircraft.padEnd(8)}${part.partNumber.padEnd(16)}${padChinese(part.partName, 24)}${SLOT_TYPE_LABELS[slot.type].padEnd(12)}${PROGRESS_LABELS[slot.progress].padEnd(12)}${part.calendarLifeExpiry.padEnd(12)}${String(part.remainingCycles).padStart(8)}  ${slot.note || '-'}`
+                `    ${part.partNumber.padEnd(14)}` +
+                `${part.serialNumber.padEnd(12)}` +
+                `${padChinese(part.partName, 20)}` +
+                `${ag.aircraft.padEnd(8)}` +
+                `${padChinese(part.installedPosition, 8)}` +
+                `${SLOT_TYPE_LABELS[slot.type].padEnd(10)}` +
+                `${PROGRESS_LABELS[slot.progress].padEnd(10)}` +
+                `${part.calendarLifeExpiry.padEnd(12)}` +
+                `${String(part.remainingCycles).padStart(8)} ` +
+                `${slot.note || '-'}`
               )
             }
             if (ag.isOverloaded) {
-              lines.push(`    ⚠️  ${ag.aircraft} 本周排程 ${ag.slots.length} 件，检修窗口拥挤！`)
+              lines.push(`    ⚠️  ${ag.aircraft} 本周排程 ${ag.slots.length} 件，检修窗口拥挤，建议分散！`)
             }
           }
         }
 
+        if (totalScheduled === 0) {
+          lines.push('  （未来8周暂无排程）')
+        }
+
         lines.push('')
-        lines.push('='.repeat(100))
-        lines.push('  报表结束')
-        lines.push('='.repeat(100))
+        lines.push('='.repeat(totalWidth))
+        lines.push(`  总计: 风险件 ${allRiskParts.length} 件 | 未排程 ${unscheduledParts.length} 件 | 已排程 ${scheduledParts.length} 件 | 8周窗口 ${totalScheduled} 件次`)
+        lines.push('='.repeat(totalWidth))
 
         return lines.join('\n')
       },

@@ -6,7 +6,15 @@ export type Shift = 'day' | 'night'
 export type SlotType = 'order' | 'repair' | 'merge_check'
 export type RiskLevel = 'critical' | 'warning' | 'caution'
 export type SlotProgress = 'pending' | 'ordered' | 'in_repair' | 'waiting_install' | 'completed'
-export type PlanHistoryType = 'schedule_created' | 'schedule_rescheduled' | 'type_changed' | 'progress_updated' | 'schedule_removed'
+export type PlanHistoryType =
+  | 'schedule_created'
+  | 'schedule_rescheduled'
+  | 'type_changed'
+  | 'progress_updated'
+  | 'schedule_removed'
+  | 'note_created'
+  | 'note_confirmed'
+  | 'note_resolved'
 
 export interface LifeLimitedPart {
   id: string
@@ -111,6 +119,9 @@ export const PLAN_HISTORY_TYPE_LABELS: Record<PlanHistoryType, string> = {
   type_changed: '变更处理方式',
   progress_updated: '更新进度',
   schedule_removed: '移除排程',
+  note_created: '新增交接备注',
+  note_confirmed: '确认交接备注',
+  note_resolved: '处理交接备注',
 }
 
 export const NOTE_STATUS_LABELS: Record<NoteStatus, string> = {

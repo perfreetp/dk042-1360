@@ -360,6 +360,7 @@ export default function Schedule() {
   const [activePart, setActivePart] = useState<LifeLimitedPart | null>(null)
   const [scheduleModalPart, setScheduleModalPart] = useState<LifeLimitedPart | null>(null)
   const [selectedSlotType, setSelectedSlotType] = useState<SlotType>('order')
+  const [selectedProgress, setSelectedProgress] = useState<SlotProgress>('pending')
   const [selectedWeek, setSelectedWeek] = useState<string>('')
   const [notePartId, setNotePartId] = useState<string | null>(null)
   const [cycleInput, setCycleInput] = useState(
@@ -396,6 +397,7 @@ export default function Schedule() {
       const weekDateStr = overId.replace('week-', '')
       setScheduleModalPart(part)
       setSelectedWeek(weekDateStr)
+      setSelectedProgress('pending')
     }
   }, [])
 
@@ -407,6 +409,7 @@ export default function Schedule() {
       plannedDate: selectedWeek,
       type: selectedSlotType,
       note: '',
+      progress: selectedProgress,
     })
     const statusMap: Record<SlotType, ScheduleStatus> = {
       order: 'need_order',
@@ -655,13 +658,30 @@ export default function Schedule() {
                 <p className="font-mono text-sm text-cockpit-50">{selectedWeek}</p>
               </div>
 
-              <div className="mb-4 p-3 bg-cockpit-800/50 rounded-md">
-                <p className="text-[11px] text-cockpit-400 mb-1">初始进度</p>
-                <div className="flex items-center gap-1.5 text-xs text-cockpit-300">
-                  <Clock className="w-3 h-3" />
-                  <span>待启动</span>
-                  <span className="text-[10px] text-cockpit-400 ml-2">（排程后可点击进度更新）</span>
+              <div className="mb-4">
+                <p className="text-xs text-cockpit-400 mb-2">处理进度</p>
+                <div className="grid grid-cols-5 gap-1">
+                  {PROGRESS_STEPS.map((step) => {
+                    const idx = PROGRESS_STEPS.indexOf(step)
+                    const isSelected = selectedProgress === step
+                    const colorClass = isSelected
+                      ? 'bg-amber/20 text-amber border-amber/50'
+                      : 'bg-cockpit-700 text-cockpit-300 border-cockpit-500 hover:bg-cockpit-600'
+                    return (
+                      <button
+                        key={step}
+                        onClick={() => setSelectedProgress(step)}
+                        className={`flex flex-col items-center gap-1 px-1.5 py-2 rounded-md text-[10px] border transition-colors ${colorClass}`}
+                      >
+                        <ProgressStepIcon progress={step} />
+                        <span>{PROGRESS_LABELS[step]}</span>
+                      </button>
+                    )
+                  })}
                 </div>
+                <p className="text-[10px] text-emerald-400/80 mt-2">
+                  ✅ 选择「已完成」后自动从风险列表移除
+                </p>
               </div>
 
               <div className="flex gap-2">

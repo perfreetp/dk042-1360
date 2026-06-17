@@ -5,6 +5,8 @@ export type NoteStatus = 'pending' | 'confirmed' | 'resolved'
 export type Shift = 'day' | 'night'
 export type SlotType = 'order' | 'repair' | 'merge_check'
 export type RiskLevel = 'critical' | 'warning' | 'caution'
+export type SlotProgress = 'pending' | 'ordered' | 'in_repair' | 'waiting_install' | 'completed'
+export type PlanHistoryType = 'schedule_created' | 'schedule_rescheduled' | 'type_changed' | 'progress_updated' | 'schedule_removed'
 
 export interface LifeLimitedPart {
   id: string
@@ -32,6 +34,8 @@ export interface MaintenanceSlot {
   aircraft: string
   plannedDate: string
   type: SlotType
+  progress: SlotProgress
+  progressUpdatedAt: string
   note: string
 }
 
@@ -49,6 +53,16 @@ export interface HandoverNote {
   confirmedAt: string | null
   resolvedBy: string | null
   resolvedAt: string | null
+}
+
+export interface PlanHistory {
+  id: string
+  partId: string
+  type: PlanHistoryType
+  description: string
+  actor: string
+  timestamp: string
+  details?: Record<string, string>
 }
 
 export interface PartFilter {
@@ -75,6 +89,30 @@ export const SCHEDULE_STATUS_LABELS: Record<ScheduleStatus, string> = {
   merge_check: '合并定检',
 }
 
+export const SLOT_TYPE_LABELS: Record<SlotType, string> = {
+  order: '需订件',
+  repair: '需送修',
+  merge_check: '合并定检',
+}
+
+export const PROGRESS_LABELS: Record<SlotProgress, string> = {
+  pending: '待启动',
+  ordered: '已下单',
+  in_repair: '送修中',
+  waiting_install: '等待装机',
+  completed: '已完成',
+}
+
+export const PROGRESS_STEPS: SlotProgress[] = ['pending', 'ordered', 'in_repair', 'waiting_install', 'completed']
+
+export const PLAN_HISTORY_TYPE_LABELS: Record<PlanHistoryType, string> = {
+  schedule_created: '排入计划',
+  schedule_rescheduled: '改期',
+  type_changed: '变更处理方式',
+  progress_updated: '更新进度',
+  schedule_removed: '移除排程',
+}
+
 export const NOTE_STATUS_LABELS: Record<NoteStatus, string> = {
   pending: '待确认',
   confirmed: '已确认',
@@ -86,4 +124,10 @@ export const PART_STATUS_LABELS: Record<PartStatus, string> = {
   warning: '预警',
   critical: '紧急',
   expired: '超期',
+}
+
+export const RISK_LEVEL_LABELS: Record<RiskLevel, string> = {
+  critical: '紧急',
+  warning: '警告',
+  caution: '关注',
 }

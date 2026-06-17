@@ -1,4 +1,4 @@
-import type { LifeLimitedPart, MaintenanceSlot, HandoverNote } from '@/types'
+import type { LifeLimitedPart, MaintenanceSlot, HandoverNote, PlanHistory } from '@/types'
 
 const today = new Date()
 const d = (daysFromNow: number) => {
@@ -198,19 +198,66 @@ export const INITIAL_PARTS: LifeLimitedPart[] = [
 export const INITIAL_SLOTS: MaintenanceSlot[] = [
   {
     id: 's001', partId: 'p004', aircraft: 'B-6035',
-    plannedDate: d(3), type: 'order', note: '紧急订购替换涡轮叶片组',
+    plannedDate: d(3), type: 'order',
+    progress: 'ordered', progressUpdatedAt: past(1) + 'T10:30:00',
+    note: '紧急订购替换涡轮叶片组，订单号PO-2026-0617-003',
   },
   {
     id: 's002', partId: 'p007', aircraft: 'B-6035',
-    plannedDate: d(10), type: 'repair', note: '送修前起转向作动筒',
+    plannedDate: d(10), type: 'repair',
+    progress: 'in_repair', progressUpdatedAt: past(2) + 'T14:15:00',
+    note: '送修前起转向作动筒，已发往GAMECO',
   },
   {
     id: 's003', partId: 'p017', aircraft: 'B-6091',
-    plannedDate: d(20), type: 'merge_check', note: '与A检合并更换高压涡轮导向器',
+    plannedDate: d(20), type: 'merge_check',
+    progress: 'pending', progressUpdatedAt: past(3) + 'T09:00:00',
+    note: '与A检合并更换高压涡轮导向器',
   },
   {
     id: 's004', partId: 'p001', aircraft: 'B-6012',
-    plannedDate: d(7), type: 'repair', note: '1发HP涡轮盘即将到寿，安排换发',
+    plannedDate: d(7), type: 'repair',
+    progress: 'pending', progressUpdatedAt: past(1) + 'T16:45:00',
+    note: '1发HP涡轮盘即将到寿，安排换发',
+  },
+]
+
+export const INITIAL_PLAN_HISTORY: PlanHistory[] = [
+  {
+    id: 'h001', partId: 'p004', type: 'schedule_created',
+    description: '排入第1周检修窗口，标记需订件',
+    actor: '赵磊(白班)', timestamp: past(5) + 'T11:00:00',
+    details: { week: '第1周', type: '需订件', plannedDate: d(3) },
+  },
+  {
+    id: 'h002', partId: 'p004', type: 'progress_updated',
+    description: '更新进度：待启动 → 已下单',
+    actor: '李娜(夜班)', timestamp: past(1) + 'T10:30:00',
+    details: { oldProgress: '待启动', newProgress: '已下单', orderNo: 'PO-2026-0617-003' },
+  },
+  {
+    id: 'h003', partId: 'p007', type: 'schedule_created',
+    description: '排入第2周检修窗口，标记需送修',
+    actor: '张伟(夜班)', timestamp: past(4) + 'T22:30:00',
+    details: { week: '第2周', type: '需送修', plannedDate: d(10) },
+  },
+  {
+    id: 'h004', partId: 'p007', type: 'progress_updated',
+    description: '更新进度：待启动 → 送修中',
+    actor: '王强(夜班)', timestamp: past(2) + 'T14:15:00',
+    details: { oldProgress: '待启动', newProgress: '送修中', vendor: 'GAMECO' },
+  },
+  {
+    id: 'h005', partId: 'p017', type: 'schedule_created',
+    description: '排入第3周检修窗口，标记合并定检',
+    actor: '陈芳(白班)', timestamp: past(3) + 'T09:00:00',
+    details: { week: '第3周', type: '合并定检', plannedDate: d(20) },
+  },
+  {
+    id: 'h006', partId: 'p001', type: 'schedule_created',
+    description: '排入第1周检修窗口，标记需送修',
+    actor: '张伟(夜班)', timestamp: past(1) + 'T16:45:00',
+    details: { week: '第1周', type: '需送修', plannedDate: d(7) },
   },
 ]
 

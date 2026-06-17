@@ -1,0 +1,260 @@
+import type { LifeLimitedPart, MaintenanceSlot, HandoverNote } from '@/types'
+
+const today = new Date()
+const d = (daysFromNow: number) => {
+  const dt = new Date(today)
+  dt.setDate(dt.getDate() + daysFromNow)
+  return dt.toISOString().slice(0, 10)
+}
+const past = (daysAgo: number) => {
+  const dt = new Date(today)
+  dt.setDate(dt.getDate() - daysAgo)
+  return dt.toISOString().slice(0, 10)
+}
+
+export const INITIAL_PARTS: LifeLimitedPart[] = [
+  {
+    id: 'p001', partNumber: '2308M83P03', serialNumber: 'SN-E2001', partName: 'HP涡轮盘',
+    category: 'engine_llp', installedAircraft: 'B-6012', installedPosition: '1发',
+    totalLifeCycles: 20000, usedCycles: 18200, remainingCycles: 1800,
+    calendarLifeExpiry: d(18), manufacturingDate: '2018-03-15',
+    lastRemovalDate: past(120), lastInstallDate: past(90),
+    airworthinessDocRef: 'AD 2023-12-08 / SB-CFM56-72-089',
+    status: 'critical', scheduleStatus: 'none',
+  },
+  {
+    id: 'p002', partNumber: '1394M82P01', serialNumber: 'SN-E2002', partName: 'LP压气机转子',
+    category: 'engine_llp', installedAircraft: 'B-6012', installedPosition: '2发',
+    totalLifeCycles: 25000, usedCycles: 22100, remainingCycles: 2900,
+    calendarLifeExpiry: d(45), manufacturingDate: '2017-08-22',
+    lastRemovalDate: null, lastInstallDate: past(365),
+    airworthinessDocRef: 'AD 2024-03-15 / SB-CFM56-72-092',
+    status: 'warning', scheduleStatus: 'need_repair',
+  },
+  {
+    id: 'p003', partNumber: '7465M91P02', serialNumber: 'SN-E3003', partName: 'HP压气机第3级轮盘',
+    category: 'engine_llp', installedAircraft: 'B-6035', installedPosition: '1发',
+    totalLifeCycles: 18000, usedCycles: 12500, remainingCycles: 5500,
+    calendarLifeExpiry: d(180), manufacturingDate: '2019-05-10',
+    lastRemovalDate: past(200), lastInstallDate: past(180),
+    airworthinessDocRef: 'AD 2023-09-22 / SB-CFM56-72-085',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p004', partNumber: '3310M74P05', serialNumber: 'SN-E4004', partName: 'HP涡轮叶片组',
+    category: 'engine_llp', installedAircraft: 'B-6035', installedPosition: '2发',
+    totalLifeCycles: 15000, usedCycles: 14200, remainingCycles: 800,
+    calendarLifeExpiry: d(8), manufacturingDate: '2016-11-03',
+    lastRemovalDate: past(90), lastInstallDate: past(60),
+    airworthinessDocRef: 'AD 2024-01-17 / SB-CFM56-72-095',
+    status: 'critical', scheduleStatus: 'need_order',
+  },
+  {
+    id: 'p005', partNumber: '8921M65P04', serialNumber: 'SN-E5005', partName: '风扇盘组件',
+    category: 'engine_llp', installedAircraft: 'B-6078', installedPosition: '1发',
+    totalLifeCycles: 30000, usedCycles: 26800, remainingCycles: 3200,
+    calendarLifeExpiry: d(62), manufacturingDate: '2020-01-20',
+    lastRemovalDate: past(300), lastInstallDate: past(250),
+    airworthinessDocRef: 'AD 2022-07-30 / SB-CFM56-72-078',
+    status: 'warning', scheduleStatus: 'merge_check',
+  },
+  {
+    id: 'p006', partNumber: 'LG-737-MLG-01', serialNumber: 'SN-L6001', partName: '主起落架外筒',
+    category: 'landing_gear', installedAircraft: 'B-6012', installedPosition: '左主起',
+    totalLifeCycles: 20000, usedCycles: 16800, remainingCycles: 3200,
+    calendarLifeExpiry: d(200), manufacturingDate: '2015-06-18',
+    lastRemovalDate: past(450), lastInstallDate: past(420),
+    airworthinessDocRef: 'AD 2021-11-05 / SB-737-32-1492',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p007', partNumber: 'LG-737-NLG-03', serialNumber: 'SN-L6002', partName: '前起落架转向作动筒',
+    category: 'landing_gear', installedAircraft: 'B-6035', installedPosition: '前起',
+    totalLifeCycles: 12000, usedCycles: 10800, remainingCycles: 1200,
+    calendarLifeExpiry: d(25), manufacturingDate: '2017-04-12',
+    lastRemovalDate: past(180), lastInstallDate: past(150),
+    airworthinessDocRef: 'AD 2023-06-20 / SB-737-32-1510',
+    status: 'critical', scheduleStatus: 'need_repair',
+  },
+  {
+    id: 'p008', partNumber: 'LG-737-MLG-05', serialNumber: 'SN-L6003', partName: '主起落架缓冲支柱',
+    category: 'landing_gear', installedAircraft: 'B-6078', installedPosition: '右主起',
+    totalLifeCycles: 18000, usedCycles: 15900, remainingCycles: 2100,
+    calendarLifeExpiry: d(55), manufacturingDate: '2018-09-28',
+    lastRemovalDate: null, lastInstallDate: past(600),
+    airworthinessDocRef: 'AD 2022-12-14 / SB-737-32-1488',
+    status: 'warning', scheduleStatus: 'none',
+  },
+  {
+    id: 'p009', partNumber: 'LG-737-MLG-07', serialNumber: 'SN-L6004', partName: '侧撑杆接头',
+    category: 'landing_gear', installedAircraft: 'B-6091', installedPosition: '左主起',
+    totalLifeCycles: 16000, usedCycles: 9800, remainingCycles: 6200,
+    calendarLifeExpiry: d(300), manufacturingDate: '2019-02-14',
+    lastRemovalDate: past(100), lastInstallDate: past(80),
+    airworthinessDocRef: 'AD 2023-08-03 / SB-737-32-1525',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p010', partNumber: 'LG-737-NLG-06', serialNumber: 'SN-L6005', partName: '前轮转弯活门',
+    category: 'landing_gear', installedAircraft: 'B-6091', installedPosition: '前起',
+    totalLifeCycles: 10000, usedCycles: 9500, remainingCycles: 500,
+    calendarLifeExpiry: d(5), manufacturingDate: '2016-07-30',
+    lastRemovalDate: past(60), lastInstallDate: past(30),
+    airworthinessDocRef: 'AD 2024-02-28 / SB-737-32-1538',
+    status: 'expired', scheduleStatus: 'need_order',
+  },
+  {
+    id: 'p011', partNumber: 'EE-SLIDE-01', serialNumber: 'SN-S7001', partName: '滑梯/救生筏组件',
+    category: 'emergency_equip', installedAircraft: 'B-6012', installedPosition: 'L1门',
+    totalLifeCycles: 0, usedCycles: 0, remainingCycles: 0,
+    calendarLifeExpiry: d(35), manufacturingDate: '2019-10-08',
+    lastRemovalDate: past(365), lastInstallDate: past(340),
+    airworthinessDocRef: 'MSD-25-61-01 / TCCA AD 2023-05',
+    status: 'warning', scheduleStatus: 'none',
+  },
+  {
+    id: 'p012', partNumber: 'EE-EXT-03', serialNumber: 'SN-S7002', partName: '便携式灭火器',
+    category: 'emergency_equip', installedAircraft: 'B-6012', installedPosition: '前服务舱',
+    totalLifeCycles: 0, usedCycles: 0, remainingCycles: 0,
+    calendarLifeExpiry: d(12), manufacturingDate: '2020-03-22',
+    lastRemovalDate: null, lastInstallDate: past(730),
+    airworthinessDocRef: 'MSD-26-23-02 / CAAC AD 2024-01',
+    status: 'critical', scheduleStatus: 'need_order',
+  },
+  {
+    id: 'p013', partNumber: 'EE-O2-05', serialNumber: 'SN-S7003', partName: '旅客氧气发生器',
+    category: 'emergency_equip', installedAircraft: 'B-6035', installedPosition: '客舱3排PSU',
+    totalLifeCycles: 0, usedCycles: 0, remainingCycles: 0,
+    calendarLifeExpiry: d(75), manufacturingDate: '2018-12-01',
+    lastRemovalDate: past(200), lastInstallDate: past(180),
+    airworthinessDocRef: 'MSD-35-22-01 / FAA AD 2023-18',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p014', partNumber: 'EE-ELT-02', serialNumber: 'SN-S7004', partName: '应急定位发射器',
+    category: 'emergency_equip', installedAircraft: 'B-6078', installedPosition: '后货舱',
+    totalLifeCycles: 0, usedCycles: 0, remainingCycles: 0,
+    calendarLifeExpiry: d(120), manufacturingDate: '2021-05-17',
+    lastRemovalDate: null, lastInstallDate: past(500),
+    airworthinessDocRef: 'MSD-23-24-01 / TCCA AD 2022-12',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p015', partNumber: 'EE-SLIDE-04', serialNumber: 'SN-S7005', partName: '翼上出口滑梯',
+    category: 'emergency_equip', installedAircraft: 'B-6091', installedPosition: 'L3翼上出口',
+    totalLifeCycles: 0, usedCycles: 0, remainingCycles: 0,
+    calendarLifeExpiry: d(22), manufacturingDate: '2019-08-05',
+    lastRemovalDate: past(150), lastInstallDate: past(120),
+    airworthinessDocRef: 'MSD-25-61-03 / CAAC AD 2024-06',
+    status: 'critical', scheduleStatus: 'need_repair',
+  },
+  {
+    id: 'p016', partNumber: '3315M80P06', serialNumber: 'SN-E6006', partName: '低压涡轮轴',
+    category: 'engine_llp', installedAircraft: 'B-6078', installedPosition: '2发',
+    totalLifeCycles: 22000, usedCycles: 15500, remainingCycles: 6500,
+    calendarLifeExpiry: d(250), manufacturingDate: '2020-07-14',
+    lastRemovalDate: past(80), lastInstallDate: past(60),
+    airworthinessDocRef: 'AD 2023-04-11 / SB-CFM56-72-082',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p017', partNumber: '4408M77P03', serialNumber: 'SN-E7007', partName: '高压涡轮导向器',
+    category: 'engine_llp', installedAircraft: 'B-6091', installedPosition: '1发',
+    totalLifeCycles: 16000, usedCycles: 14800, remainingCycles: 1200,
+    calendarLifeExpiry: d(32), manufacturingDate: '2018-02-28',
+    lastRemovalDate: past(60), lastInstallDate: past(40),
+    airworthinessDocRef: 'AD 2024-05-09 / SB-CFM56-72-097',
+    status: 'warning', scheduleStatus: 'merge_check',
+  },
+  {
+    id: 'p018', partNumber: 'LG-737-MLG-09', serialNumber: 'SN-L6006', partName: '扭力臂组件',
+    category: 'landing_gear', installedAircraft: 'B-6035', installedPosition: '右主起',
+    totalLifeCycles: 14000, usedCycles: 10500, remainingCycles: 3500,
+    calendarLifeExpiry: d(150), manufacturingDate: '2020-11-09',
+    lastRemovalDate: past(250), lastInstallDate: past(220),
+    airworthinessDocRef: 'AD 2022-09-16 / SB-737-32-1480',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p019', partNumber: 'EE-O2-08', serialNumber: 'SN-S7006', partName: '化学氧气发生器',
+    category: 'emergency_equip', installedAircraft: 'B-6091', installedPosition: '客舱12排PSU',
+    totalLifeCycles: 0, usedCycles: 0, remainingCycles: 0,
+    calendarLifeExpiry: d(88), manufacturingDate: '2019-06-20',
+    lastRemovalDate: past(300), lastInstallDate: past(280),
+    airworthinessDocRef: 'MSD-35-22-04 / FAA AD 2023-22',
+    status: 'normal', scheduleStatus: 'none',
+  },
+  {
+    id: 'p020', partNumber: '5312M79P02', serialNumber: 'SN-E8008', partName: '第4级低压压气机盘',
+    category: 'engine_llp', installedAircraft: 'B-6035', installedPosition: '1发',
+    totalLifeCycles: 20000, usedCycles: 19000, remainingCycles: 1000,
+    calendarLifeExpiry: d(15), manufacturingDate: '2017-05-25',
+    lastRemovalDate: past(30), lastInstallDate: past(15),
+    airworthinessDocRef: 'AD 2024-04-02 / SB-CFM56-72-096',
+    status: 'critical', scheduleStatus: 'need_order',
+  },
+]
+
+export const INITIAL_SLOTS: MaintenanceSlot[] = [
+  {
+    id: 's001', partId: 'p004', aircraft: 'B-6035',
+    plannedDate: d(3), type: 'order', note: '紧急订购替换涡轮叶片组',
+  },
+  {
+    id: 's002', partId: 'p007', aircraft: 'B-6035',
+    plannedDate: d(10), type: 'repair', note: '送修前起转向作动筒',
+  },
+  {
+    id: 's003', partId: 'p017', aircraft: 'B-6091',
+    plannedDate: d(20), type: 'merge_check', note: '与A检合并更换高压涡轮导向器',
+  },
+  {
+    id: 's004', partId: 'p001', aircraft: 'B-6012',
+    plannedDate: d(7), type: 'repair', note: '1发HP涡轮盘即将到寿，安排换发',
+  },
+]
+
+export const INITIAL_NOTES: HandoverNote[] = [
+  {
+    id: 'n001', partId: 'p001', author: '张伟(夜班)', shift: 'night',
+    content: '1发HP涡轮盘循环剩余1800，按当前日利用率约55循环/天，仅剩约33天。建议立即安排换发。',
+    reason: '循环寿命快速消耗，日历期限仅余18天',
+    pendingItems: '确认是否有可用备件SN-E2099在库',
+    status: 'pending', createdAt: past(1) + 'T22:15:00',
+    confirmedBy: null, confirmedAt: null, resolvedBy: null, resolvedAt: null,
+  },
+  {
+    id: 'n002', partId: 'p004', author: '李娜(夜班)', shift: 'night',
+    content: 'HP涡轮叶片组循环仅剩800，已标记需订件。备件预计到货日期未确认，需白班跟进。',
+    reason: '循环余量极低，无可用备件',
+    pendingItems: '1. 联系供应商确认交期 2. 评估临时限飞可行性',
+    status: 'pending', createdAt: past(1) + 'T23:40:00',
+    confirmedBy: null, confirmedAt: null, resolvedBy: null, resolvedAt: null,
+  },
+  {
+    id: 'n003', partId: 'p010', author: '王强(夜班)', shift: 'night',
+    content: '前轮转弯活门已超期，需立即更换。飞机目前执行短航线可暂时限飞。',
+    reason: '日历寿命已到，必须立即处理',
+    pendingItems: '确认MEL条款是否适用，安排AOG订件',
+    status: 'confirmed', createdAt: past(2) + 'T21:30:00',
+    confirmedBy: '赵磊(白班)', confirmedAt: past(1) + 'T08:15:00',
+    resolvedBy: null, resolvedAt: null,
+  },
+  {
+    id: 'n004', partId: 'p012', author: '陈芳(白班)', shift: 'day',
+    content: '便携式灭火器日历到期仅12天，已联系供应商加急交付。',
+    reason: '日历寿命临近，客舱安全设备必须按时更换',
+    pendingItems: '确认加急订单号和预计到货日期',
+    status: 'pending', createdAt: past(0) + 'T10:00:00',
+    confirmedBy: null, confirmedAt: null, resolvedBy: null, resolvedAt: null,
+  },
+  {
+    id: 'n005', partId: 'p002', author: '赵磊(白班)', shift: 'day',
+    content: '2发LP压气机转子已安排送修，45天内必须完成。',
+    reason: '循环寿命和日历寿命均接近限制',
+    pendingItems: '跟踪送修进度，确认修理厂产能',
+    status: 'resolved', createdAt: past(5) + 'T14:20:00',
+    confirmedBy: '陈芳(白班)', confirmedAt: past(4) + 'T09:10:00',
+    resolvedBy: '张伟(夜班)', resolvedAt: past(2) + 'T20:45:00',
+  },
+]

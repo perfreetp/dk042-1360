@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background-color: #0F1923;
+  color: #E8ECF0;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  width: 100vw;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1A2735;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3A5570;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5A7A95;
+}
+
+@layer components {
+  .cockpit-input {
+    @apply bg-cockpit-700 border border-cockpit-500 rounded px-3 py-1.5 text-sm text-cockpit-50 placeholder-cockpit-300 focus:outline-none focus:border-amber focus:ring-1 focus:ring-amber/30 transition-colors font-mono;
+  }
+
+  .cockpit-btn {
+    @apply px-3 py-1.5 rounded text-sm font-medium transition-all duration-150 active:scale-95;
+  }
+
+  .cockpit-btn-primary {
+    @apply cockpit-btn bg-amber text-cockpit-900 hover:bg-amber-light shadow-md shadow-amber/20;
+  }
+
+  .cockpit-btn-secondary {
+    @apply cockpit-btn bg-cockpit-600 text-cockpit-100 hover:bg-cockpit-500 border border-cockpit-500;
+  }
+
+  .cockpit-card {
+    @apply bg-cockpit-700 border border-cockpit-500 rounded-lg;
+  }
+
+  .status-dot {
+    @apply w-2 h-2 rounded-full inline-block mr-2;
+  }
+
+  .status-critical { @apply status-dot bg-risk-critical animate-pulse; }
+  .status-warning { @apply status-dot bg-risk-warning; }
+  .status-caution { @apply status-dot bg-risk-caution; }
+  .status-normal { @apply status-dot bg-risk-normal; }
+
+  .tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono;
+  }
+
+  .tag-order { @apply tag bg-blue-900/60 text-blue-300 border border-blue-700/50; }
+  .tag-repair { @apply tag bg-orange-900/60 text-orange-300 border border-orange-700/50; }
+  .tag-merge { @apply tag bg-emerald-900/60 text-emerald-300 border border-emerald-700/50; }
+  .tag-none { @apply tag bg-cockpit-600 text-cockpit-200 border border-cockpit-500; }
+
+  .drawer-overlay {
+    @apply fixed inset-0 bg-black/50 z-40 transition-opacity;
+  }
+
+  .drawer-panel {
+    @apply fixed right-0 top-0 h-full w-[520px] bg-cockpit-800 border-l border-cockpit-500 z-50 overflow-y-auto shadow-2xl;
+  }
+}

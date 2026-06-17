@@ -1,9 +1,9 @@
-import { useState, useCallback } from 'react'
-import { differenceInDays, addDays, format, parseISO } from 'date-fns'
+import { useState, useCallback, useMemo } from 'react'
+import { differenceInDays, addDays, format, parseISO, isWithinInterval, startOfDay } from 'date-fns'
 import { DndContext, DragOverlay, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
-import { AlertTriangle, Calendar, GripVertical, ShoppingCart, Wrench, Merge, Trash2, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react'
+import { AlertTriangle, Calendar, GripVertical, ShoppingCart, Wrench, Merge, Trash2, MessageSquare, RotateCcw } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import { CATEGORY_LABELS, SCHEDULE_STATUS_LABELS } from '@/types'
+import { SCHEDULE_STATUS_LABELS } from '@/types'
 import type { RiskLevel, LifeLimitedPart, SlotType, ScheduleStatus } from '@/types'
 import HandoverNotePanel from '@/components/HandoverNotePanel'
 
@@ -80,8 +80,7 @@ function DraggablePartCard({ part, level }: { part: LifeLimitedPart; level: Risk
 
 function DroppableWeekSlot({ weekStart, weekLabel, partsInSlot }: { weekStart: Date; weekLabel: string; partsInSlot: LifeLimitedPart[] }) {
   const { isOver, setNodeRef } = useDroppable({ id: `week-${format(weekStart, 'yyyy-MM-dd')}`, data: { weekStart } })
-  const removeSlot = useStore((s) => s.removeSlot)
-  const updatePartScheduleStatus = useStore((s) => s.updatePartScheduleStatus)
+  const removeSlotByPartId = useStore((s) => s.removeSlotByPartId)
 
   return (
     <div
@@ -106,7 +105,7 @@ function DroppableWeekSlot({ weekStart, weekLabel, partsInSlot }: { weekStart: D
             {SCHEDULE_STATUS_LABELS[part.scheduleStatus]}
           </span>
           <button
-            onClick={() => { removeSlot(`slot-${part.id}`); updatePartScheduleStatus(part.id, 'none') }}
+            onClick={() => removeSlotByPartId(part.id)}
             className="p-0.5 rounded hover:bg-cockpit-500 text-cockpit-400 hover:text-risk-critical transition-colors"
             title="移除排程"
           >
@@ -129,10 +128,14 @@ const SLOT_TYPE_OPTIONS: { value: SlotType; label: string; icon: React.ReactNode
   { value: 'merge_check', label: '合并定检', icon: <Merge className="w-3 h-3" />, cls: 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40 hover:bg-emerald-900/60' },
 ]
 
+const CALENDAR_PRESETS = [30, 60, 90] as const
+
 export default function Schedule() {
   const getRiskParts = useStore((s) => s.getRiskParts)
   const slots = useStore((s) => s.slots)
   const parts = useStore((s) => s.parts)
+  const riskFilter = useStore((s) => s.riskFilter)
+  const setRiskFilter = useStore((s) => s.setRiskFilter)
   const addSlot = useStore((s) => s.addSlot)
   const updatePartScheduleStatus = useStore((s) => s.updatePartScheduleStatus)
   const [activePart, setActivePart] = useState<LifeLimitedPart | null>(null)
@@ -140,18 +143,19 @@ export default function Schedule() {
   const [selectedSlotType, setSelectedSlotType] = useState<SlotType>('order')
   const [selectedWeek, setSelectedWeek] = useState<string>('')
   const [notePartId, setNotePartId] = useState<string | null>(null)
+  const [cycleInput, setCycleInput] = useState(riskFilter.maxRemainingCycles?.toString() || '3000')
 
-  const riskGroups = getRiskParts()
+  const riskGroups = useMemo(() => getRiskParts(), [riskFilter, getRiskParts])
 
-  const weeks = Array.from({ length: 8 }, (_, i) => {
-    const start = addDays(new Date(), i * 7)
+  const weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => {
+    const start = startOfDay(addDays(startOfDay(new Date()), i * 7))
     const end = addDays(start, 6)
     return {
       start,
       end,
       label: `${format(start, 'MM/dd')} - ${format(end, 'MM/dd')}`,
     }
-  })
+  }), [])
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -189,19 +193,33 @@ export default function Schedule() {
     setScheduleModalPart(null)
   }
 
-  const getPartsInSlot = (weekStart: Date) => {
+  const getPartsInSlot = useCallback((weekStart: Date) => {
     const weekEnd = addDays(weekStart, 6)
     return slots
       .map((slot) => {
         const part = parts.find((p) => p.id === slot.partId)
         if (!part) return null
-        const slotDate = parseISO(slot.plannedDate)
-        if (slotDate >= weekStart && slotDate <= weekEnd) return part
-        const d = parseISO(slot.plannedDate)
-        if (format(d, 'yyyy-MM-dd') === format(weekStart, 'yyyy-MM-dd')) return part
+        const slotDate = startOfDay(parseISO(slot.plannedDate))
+        if (isWithinInterval(slotDate, { start: weekStart, end: weekEnd })) return part
+        if (format(slotDate, 'yyyy-MM-dd') === format(weekStart, 'yyyy-MM-dd')) return part
         return null
       })
       .filter(Boolean) as LifeLimitedPart[]
+  }, [slots, parts])
+
+  const handleCycleChange = (val: string) => {
+    setCycleInput(val)
+    const num = parseInt(val)
+    if (val === '') {
+      setRiskFilter({ maxRemainingCycles: null })
+    } else if (!isNaN(num) && num >= 0) {
+      setRiskFilter({ maxRemainingCycles: num })
+    }
+  }
+
+  const handleResetFilter = () => {
+    setRiskFilter({ calendarDays: 60, maxRemainingCycles: 3000 })
+    setCycleInput('3000')
   }
 
   return (
@@ -209,14 +227,57 @@ export default function Schedule() {
       if (active.data.current) setActivePart(active.data.current.part as LifeLimitedPart)
     }}>
       <div className="h-full flex">
-        <div className="w-[320px] border-r border-cockpit-500 flex flex-col shrink-0 bg-cockpit-900/30">
+        <div className="w-[340px] border-r border-cockpit-500 flex flex-col shrink-0 bg-cockpit-900/30">
           <div className="px-4 py-3 border-b border-cockpit-500">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-4 h-4 text-amber" />
               <h2 className="text-sm font-semibold text-amber">风险列表</h2>
+              <button
+                onClick={handleResetFilter}
+                className="ml-auto p-1 rounded hover:bg-cockpit-600 text-cockpit-400 hover:text-cockpit-200 transition-colors"
+                title="重置筛选"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <p className="text-xs text-cockpit-400 mt-1">拖拽寿命件到右侧排程</p>
+
+            <div className="mb-2">
+              <p className="text-xs text-cockpit-400 mb-1.5">日历到期范围</p>
+              <div className="flex gap-1">
+                {CALENDAR_PRESETS.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setRiskFilter({ calendarDays: d })}
+                    className={`flex-1 cockpit-btn text-xs py-1 ${
+                      riskFilter.calendarDays === d
+                        ? 'bg-amber/20 text-amber border border-amber/40'
+                        : 'bg-cockpit-700 text-cockpit-200 border border-cockpit-500 hover:bg-cockpit-600'
+                    }`}
+                  >
+                    {d}天内
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-2">
+              <p className="text-xs text-cockpit-400 mb-1.5">剩余循环 ≤</p>
+              <input
+                value={cycleInput}
+                onChange={(e) => handleCycleChange(e.target.value)}
+                className="cockpit-input w-full"
+                placeholder="输入循环阈值，留空不限制"
+              />
+            </div>
+
+            <p className="text-xs text-cockpit-400">拖拽寿命件到右侧排程</p>
+            <p className="text-[11px] text-cockpit-400/80 mt-1">
+              显示条件: ≤{riskFilter.calendarDays}天到期
+              {riskFilter.maxRemainingCycles !== null && ` 或 循环≤${riskFilter.maxRemainingCycles.toLocaleString()}`}
+              {riskFilter.maxRemainingCycles === null && ' (不限制循环)'}
+            </p>
           </div>
+
           <div className="flex-1 overflow-y-auto p-3">
             {riskGroups.length === 0 && (
               <div className="text-center text-cockpit-400 text-sm py-8">当前无预警件</div>

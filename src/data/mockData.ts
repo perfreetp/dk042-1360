@@ -201,24 +201,28 @@ export const INITIAL_SLOTS: MaintenanceSlot[] = [
     plannedDate: d(3), type: 'order',
     progress: 'ordered', progressUpdatedAt: past(1) + 'T10:30:00',
     note: '紧急订购替换涡轮叶片组，订单号PO-2026-0617-003',
+    rescheduleReason: '', closeReason: '', closedBy: null, closedAt: null,
   },
   {
     id: 's002', partId: 'p007', aircraft: 'B-6035',
     plannedDate: d(10), type: 'repair',
     progress: 'in_repair', progressUpdatedAt: past(2) + 'T14:15:00',
     note: '送修前起转向作动筒，已发往GAMECO',
+    rescheduleReason: '原周与定检冲突，改到第2周', closeReason: '', closedBy: null, closedAt: null,
   },
   {
     id: 's003', partId: 'p017', aircraft: 'B-6091',
     plannedDate: d(20), type: 'merge_check',
     progress: 'pending', progressUpdatedAt: past(3) + 'T09:00:00',
     note: '与A检合并更换高压涡轮导向器',
+    rescheduleReason: '', closeReason: '', closedBy: null, closedAt: null,
   },
   {
     id: 's004', partId: 'p001', aircraft: 'B-6012',
     plannedDate: d(7), type: 'repair',
     progress: 'pending', progressUpdatedAt: past(1) + 'T16:45:00',
     note: '1发HP涡轮盘即将到寿，安排换发',
+    rescheduleReason: '', closeReason: '', closedBy: null, closedAt: null,
   },
 ]
 

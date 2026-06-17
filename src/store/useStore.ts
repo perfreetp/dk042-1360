@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { differenceInDays, format, startOfISOWeek, addWeeks, isWithinInterval } from 'date-fns'
+import { differenceInDays, format, parseISO, startOfISOWeek, addWeeks, isWithinInterval } from 'date-fns'
 import type {
   LifeLimitedPart,
   MaintenanceSlot,
@@ -61,9 +61,9 @@ interface AppState {
   setRiskFilter: (filter: Partial<RiskFilter>) => void
   updatePartScheduleStatus: (partId: string, status: LifeLimitedPart['scheduleStatus']) => void
 
-  addSlot: (slot: Omit<MaintenanceSlot, 'id' | 'progress' | 'progressUpdatedAt'> & { progress?: SlotProgress }) => void
+  addSlot: (slot: Omit<MaintenanceSlot, 'id' | 'progress' | 'progressUpdatedAt' | 'rescheduleReason' | 'closeReason' | 'closedBy' | 'closedAt'> & { progress?: SlotProgress; rescheduleReason?: string; closeReason?: string }) => void
   removeSlotByPartId: (partId: string) => void
-  updateSlotProgress: (partId: string, progress: SlotProgress) => void
+  updateSlotProgress: (partId: string, progress: SlotProgress, closeReason?: string) => void
 
   addNote: (note: Omit<HandoverNote, 'id'>) => void
   confirmNote: (noteId: string, confirmedBy: string) => void
@@ -80,6 +80,13 @@ interface AppState {
   getPlanHistoryByPartId: (partId: string) => PlanHistory[]
 
   getWeeksData: () => WeekData[]
+  isPartInWindow: (partId: string) => boolean
+  getClosedParts: () => Array<{ part: LifeLimitedPart; slot: MaintenanceSlot }>
+  getReportData: () => {
+    unscheduled: LifeLimitedPart[]
+    inWindow: Array<{ part: LifeLimitedPart; slot: MaintenanceSlot; weekLabel: string }>
+    closed: Array<{ part: LifeLimitedPart; slot: MaintenanceSlot }>
+  }
 
   exportScheduleReport: () => string
 }
@@ -173,6 +180,10 @@ export const useStore = create<AppState>()(
           const weekNumber = getWeekNumber(slot.plannedDate)
           const typeLabel = SLOT_TYPE_LABELS[slot.type]
           const newProgress = slot.progress || 'pending'
+          const rescheduleReason = slot.rescheduleReason || ''
+          const closeReason = slot.closeReason || ''
+          const isClosing = newProgress === 'completed'
+          const actor = getCurrentActor(s.currentShift)
 
           if (existingIdx >= 0) {
             const oldSlot = s.slots[existingIdx]
@@ -182,10 +193,15 @@ export const useStore = create<AppState>()(
             const newProgressLabel = PROGRESS_LABELS[newProgress]
             newSlots = [...s.slots]
             newSlots[existingIdx] = {
+              ...oldSlot,
               ...slot,
               id: oldSlot.id,
               progress: newProgress,
               progressUpdatedAt: now,
+              rescheduleReason: oldWeek !== weekNumber ? rescheduleReason : oldSlot.rescheduleReason,
+              closeReason: isClosing ? closeReason || oldSlot.closeReason : oldSlot.closeReason,
+              closedBy: isClosing ? actor : oldSlot.closedBy,
+              closedAt: isClosing ? now : oldSlot.closedAt,
             }
 
             const historyDetails: Record<string, string> = {
@@ -193,16 +209,20 @@ export const useStore = create<AppState>()(
               type: typeLabel,
               plannedDate: slot.plannedDate,
             }
+            if (rescheduleReason && oldWeek !== weekNumber) {
+              historyDetails.reason = rescheduleReason
+            }
 
-            let historyAdded = false
             if (oldWeek !== weekNumber && oldType === typeLabel) {
+              const desc = rescheduleReason
+                ? `改期：第${oldWeek}周 → 第${weekNumber}周（${rescheduleReason}）`
+                : `改期：第${oldWeek}周 → 第${weekNumber}周`
               get().addPlanHistory(
                 slot.partId,
                 'schedule_rescheduled',
-                `改期：第${oldWeek}周 → 第${weekNumber}周`,
+                desc,
                 { ...historyDetails, oldWeek: `第${oldWeek}周`, newWeek: `第${weekNumber}周` }
               )
-              historyAdded = true
             } else if (oldWeek === weekNumber && oldType !== typeLabel) {
               get().addPlanHistory(
                 slot.partId,
@@ -210,23 +230,35 @@ export const useStore = create<AppState>()(
                 `变更处理方式：${oldType} → ${typeLabel}`,
                 { ...historyDetails, oldType, newType: typeLabel }
               )
-              historyAdded = true
             } else if (oldWeek !== weekNumber && oldType !== typeLabel) {
+              const desc = rescheduleReason
+                ? `改期：第${oldWeek}周(${oldType}) → 第${weekNumber}周(${typeLabel})（${rescheduleReason}）`
+                : `改期：第${oldWeek}周(${oldType}) → 第${weekNumber}周(${typeLabel})`
               get().addPlanHistory(
                 slot.partId,
                 'schedule_rescheduled',
-                `改期：第${oldWeek}周(${oldType}) → 第${weekNumber}周(${typeLabel})`,
+                desc,
                 { ...historyDetails, oldWeek: `第${oldWeek}周`, newWeek: `第${weekNumber}周`, oldType, newType: typeLabel }
               )
-              historyAdded = true
             }
 
             if (slot.progress && oldSlot.progress !== newProgress) {
+              let progressDesc = `更新进度：${oldProgressLabel} → ${newProgressLabel}`
+              const progressDetails: Record<string, string> = {
+                oldProgress: oldProgressLabel,
+                newProgress: newProgressLabel,
+              }
+              if (isClosing && closeReason) {
+                progressDesc = `关闭件：${oldProgressLabel} → ${newProgressLabel}（${closeReason}）`
+                progressDetails.closeReason = closeReason
+                progressDetails.closedBy = actor
+                progressDetails.closedAt = now
+              }
               get().addPlanHistory(
                 slot.partId,
                 'progress_updated',
-                `更新进度：${oldProgressLabel} → ${newProgressLabel}`,
-                { oldProgress: oldProgressLabel, newProgress: newProgressLabel }
+                progressDesc,
+                progressDetails
               )
             }
           } else {
@@ -237,13 +269,30 @@ export const useStore = create<AppState>()(
                 id: `s${Date.now()}`,
                 progress: newProgress,
                 progressUpdatedAt: now,
+                rescheduleReason: '',
+                closeReason: isClosing ? closeReason : '',
+                closedBy: isClosing ? actor : null,
+                closedAt: isClosing ? now : null,
               },
             ]
+            let createDesc = `排入第${weekNumber}周检修窗口，标记${typeLabel}，进度：${PROGRESS_LABELS[newProgress]}`
+            const createDetails: Record<string, string> = {
+              week: `第${weekNumber}周`,
+              type: typeLabel,
+              plannedDate: slot.plannedDate,
+              progress: PROGRESS_LABELS[newProgress],
+            }
+            if (isClosing && closeReason) {
+              createDesc += `（已关闭：${closeReason}）`
+              createDetails.closeReason = closeReason
+              createDetails.closedBy = actor
+              createDetails.closedAt = now
+            }
             get().addPlanHistory(
               slot.partId,
               'schedule_created',
-              `排入第${weekNumber}周检修窗口，标记${typeLabel}，进度：${PROGRESS_LABELS[newProgress]}`,
-              { week: `第${weekNumber}周`, type: typeLabel, plannedDate: slot.plannedDate, progress: PROGRESS_LABELS[newProgress] }
+              createDesc,
+              createDetails
             )
           }
 
@@ -279,7 +328,7 @@ export const useStore = create<AppState>()(
           }
         }),
 
-      updateSlotProgress: (partId, progress) =>
+      updateSlotProgress: (partId, progress, closeReason) =>
         set((s) => {
           const slot = s.slots.find((sl) => sl.partId === partId)
           if (!slot) return s
@@ -287,17 +336,41 @@ export const useStore = create<AppState>()(
           const oldProgressLabel = PROGRESS_LABELS[slot.progress]
           const newProgressLabel = PROGRESS_LABELS[progress]
           const now = new Date().toISOString()
+          const isClosing = progress === 'completed'
+          const actor = getCurrentActor(s.currentShift)
+
+          let desc = `更新进度：${oldProgressLabel} → ${newProgressLabel}`
+          const historyDetails: Record<string, string> = {
+            oldProgress: oldProgressLabel,
+            newProgress: newProgressLabel,
+          }
+
+          if (isClosing && closeReason) {
+            desc = `关闭件：${oldProgressLabel} → ${newProgressLabel}（${closeReason}）`
+            historyDetails.closeReason = closeReason
+            historyDetails.closedBy = actor
+            historyDetails.closedAt = now
+          }
 
           get().addPlanHistory(
             partId,
             'progress_updated',
-            `更新进度：${oldProgressLabel} → ${newProgressLabel}`,
-            { oldProgress: oldProgressLabel, newProgress: newProgressLabel }
+            desc,
+            historyDetails
           )
 
           return {
             slots: s.slots.map((sl) =>
-              sl.partId === partId ? { ...sl, progress, progressUpdatedAt: now } : sl
+              sl.partId === partId
+                ? {
+                    ...sl,
+                    progress,
+                    progressUpdatedAt: now,
+                    closeReason: isClosing ? closeReason || sl.closeReason : sl.closeReason,
+                    closedBy: isClosing ? actor : sl.closedBy,
+                    closedAt: isClosing ? now : sl.closedAt,
+                  }
+                : sl
             ),
           }
         }),
@@ -479,19 +552,68 @@ export const useStore = create<AppState>()(
         return weeks
       },
 
-      exportScheduleReport: () => {
-        const { parts, riskFilter, getRiskParts, getWeeksData, getSlotByPartId } = get()
+      isPartInWindow: (partId) => {
+        const { getWeeksData } = get()
+        const weeks = getWeeksData()
+        for (const week of weeks) {
+          for (const ag of week.aircraftGroups) {
+            if (ag.slots.some((s) => s.slot.partId === partId)) {
+              return true
+            }
+          }
+        }
+        return false
+      },
+
+      getClosedParts: () => {
+        const { parts, slots } = get()
+        const result: Array<{ part: LifeLimitedPart; slot: MaintenanceSlot }> = []
+        for (const slot of slots) {
+          if (slot.progress === 'completed') {
+            const part = parts.find((p) => p.id === slot.partId)
+            if (part) {
+              result.push({ part, slot })
+            }
+          }
+        }
+        return result
+      },
+
+      getReportData: () => {
+        const { getRiskParts, getWeeksData, getClosedParts, parts } = get()
         const riskGroups = getRiskParts()
         const weeks = getWeeksData()
-        const today = format(new Date(), 'yyyy-MM-dd HH:mm:ss')
+        const closedParts = getClosedParts()
 
         const allRiskParts: LifeLimitedPart[] = []
         for (const group of riskGroups) {
           allRiskParts.push(...group.parts)
         }
 
-        const unscheduledParts = allRiskParts.filter((p) => p.scheduleStatus === 'none')
-        const scheduledParts = allRiskParts.filter((p) => p.scheduleStatus !== 'none')
+        const inWindow: Array<{ part: LifeLimitedPart; slot: MaintenanceSlot; weekLabel: string }> = []
+        const inWindowPartIds = new Set<string>()
+
+        for (const week of weeks) {
+          for (const ag of week.aircraftGroups) {
+            for (const { slot, part } of ag.slots) {
+              if (slot.progress !== 'completed') {
+                inWindow.push({ part, slot, weekLabel: week.weekLabel })
+                inWindowPartIds.add(part.id)
+              }
+            }
+          }
+        }
+
+        const unscheduled = allRiskParts.filter((p) => !inWindowPartIds.has(p.id))
+
+        return { unscheduled, inWindow, closed: closedParts }
+      },
+
+      exportScheduleReport: () => {
+        const { parts, riskFilter, getReportData, getWeeksData, getSlotByPartId } = get()
+        const reportData = getReportData()
+        const weeks = getWeeksData()
+        const today = format(new Date(), 'yyyy-MM-dd HH:mm:ss')
 
         function getPartScheduleWeek(partId: string): string {
           const slot = getSlotByPartId(partId)
@@ -508,12 +630,40 @@ export const useStore = create<AppState>()(
           return '-'
         }
 
-        function formatPartLine(part: LifeLimitedPart, includeSchedule: boolean = true): string {
+        function formatPartLine(
+          part: LifeLimitedPart,
+          slot?: MaintenanceSlot,
+          weekLabel?: string,
+          includeExtra: boolean = true
+        ): string {
           const daysLeft = differenceInDays(new Date(part.calendarLifeExpiry), new Date())
-          const slot = getSlotByPartId(part.id)
-          const weekStr = slot ? getPartScheduleWeek(part.id) : '-'
-          const typeStr = slot ? SLOT_TYPE_LABELS[slot.type] : '未排程'
-          const progressStr = slot ? PROGRESS_LABELS[slot.progress] : '-'
+          const realSlot = slot || getSlotByPartId(part.id)
+          const weekStr = weekLabel || (realSlot ? getPartScheduleWeek(part.id) : '-')
+          const typeStr = realSlot ? SLOT_TYPE_LABELS[realSlot.type] : '未排程'
+          const progressStr = realSlot ? PROGRESS_LABELS[realSlot.progress] : '-'
+          let line =
+            `${part.partNumber.padEnd(14)}` +
+            `${part.serialNumber.padEnd(12)}` +
+            `${padChinese(part.partName, 20)}` +
+            `${part.installedAircraft.padEnd(8)}` +
+            `${padChinese(part.installedPosition, 8)}` +
+            `${PART_STATUS_LABELS[part.status].padEnd(6)}` +
+            `${String(part.remainingCycles).padStart(8)} ` +
+            `${part.calendarLifeExpiry.padEnd(12)}` +
+            `${String(daysLeft).padStart(5)}天 ` +
+            `${weekStr.padEnd(6)}${typeStr.padEnd(8)}${progressStr.padEnd(8)}`
+
+          if (includeExtra && realSlot) {
+            if (realSlot.rescheduleReason) {
+              line += ` [改期: ${realSlot.rescheduleReason}]`
+            }
+          }
+          return line
+        }
+
+        function formatClosedLine(part: LifeLimitedPart, slot: MaintenanceSlot): string {
+          const daysLeft = differenceInDays(new Date(part.calendarLifeExpiry), new Date())
+          const weekStr = getPartScheduleWeek(part.id)
           return (
             `${part.partNumber.padEnd(14)}` +
             `${part.serialNumber.padEnd(12)}` +
@@ -524,52 +674,69 @@ export const useStore = create<AppState>()(
             `${String(part.remainingCycles).padStart(8)} ` +
             `${part.calendarLifeExpiry.padEnd(12)}` +
             `${String(daysLeft).padStart(5)}天 ` +
-            (includeSchedule ? `${weekStr.padEnd(6)}${typeStr.padEnd(8)}${progressStr.padEnd(8)}` : '')
+            `${weekStr.padEnd(6)}${SLOT_TYPE_LABELS[slot.type].padEnd(8)}${PROGRESS_LABELS[slot.progress].padEnd(8)}` +
+            ` [关闭: ${slot.closeReason || '-'}]` +
+            ` [${slot.closedBy || '-'} ${slot.closedAt ? format(parseISO(slot.closedAt), 'MM-dd HH:mm') : ''}]`
           )
         }
 
         const lines: string[] = []
-        const totalWidth = 120
+        const totalWidth = 140
 
         lines.push('='.repeat(totalWidth))
         lines.push('  寿命件预警排程 - 交班报表')
         lines.push(`  生成时间: ${today}`)
         lines.push(`  筛选条件: 日历≤${riskFilter.calendarDays}天 ${riskFilter.maxRemainingCycles !== null ? `| 循环≤${riskFilter.maxRemainingCycles.toLocaleString()}` : ''}`)
-        lines.push(`  风险件总数: ${allRiskParts.length} 件 (未排程: ${unscheduledParts.length} | 已排程: ${scheduledParts.length})`)
+        lines.push(`  风险件总数: ${reportData.unscheduled.length + reportData.inWindow.length} 件 (未排程: ${reportData.unscheduled.length} | 已排窗口: ${reportData.inWindow.length} | 已关闭: ${reportData.closed.length})`)
         lines.push('='.repeat(totalWidth))
         lines.push('')
 
-        lines.push('【一、风险预警列表 - 未排程件】')
+        lines.push('【一、风险预警 - 未排程件】（未进入检修窗口的风险件）')
         lines.push('-'.repeat(totalWidth))
-        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度')
+        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度  备注')
         lines.push('-'.repeat(totalWidth))
 
-        if (unscheduledParts.length === 0) {
+        if (reportData.unscheduled.length === 0) {
           lines.push('  （无未排程风险件）')
         } else {
-          for (const p of unscheduledParts) {
+          for (const p of reportData.unscheduled) {
             lines.push(formatPartLine(p))
           }
         }
-        lines.push(`  小计: ${unscheduledParts.length} 件`)
+        lines.push(`  小计: ${reportData.unscheduled.length} 件`)
         lines.push('')
 
-        lines.push('【二、风险预警列表 - 已排程件】')
+        lines.push('【二、风险预警 - 已排窗口件】（已进入检修窗口但未完成的风险件）')
         lines.push('-'.repeat(totalWidth))
-        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度')
+        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度  备注')
         lines.push('-'.repeat(totalWidth))
 
-        if (scheduledParts.length === 0) {
-          lines.push('  （无已排程风险件）')
+        if (reportData.inWindow.length === 0) {
+          lines.push('  （无已排窗口的风险件）')
         } else {
-          for (const p of scheduledParts) {
-            lines.push(formatPartLine(p))
+          for (const { part, slot, weekLabel } of reportData.inWindow) {
+            lines.push(formatPartLine(part, slot, weekLabel))
           }
         }
-        lines.push(`  小计: ${scheduledParts.length} 件`)
+        lines.push(`  小计: ${reportData.inWindow.length} 件`)
         lines.push('')
 
-        lines.push('【三、未来8周检修窗口排程明细】')
+        lines.push('【三、已完成关闭件】（进度已标记为已完成的件）')
+        lines.push('-'.repeat(totalWidth))
+        lines.push('件号          序号        件名                  飞机    位置    状态  剩余循环 到寿日期      天数  排程周  处理方式  进度  关闭原因和操作人')
+        lines.push('-'.repeat(totalWidth))
+
+        if (reportData.closed.length === 0) {
+          lines.push('  （暂无已完成关闭的件）')
+        } else {
+          for (const { part, slot } of reportData.closed) {
+            lines.push(formatClosedLine(part, slot))
+          }
+        }
+        lines.push(`  小计: ${reportData.closed.length} 件`)
+        lines.push('')
+
+        lines.push('【四、未来8周检修窗口排程明细】')
         lines.push('-'.repeat(totalWidth))
 
         let totalScheduled = 0
@@ -581,12 +748,13 @@ export const useStore = create<AppState>()(
           lines.push('')
           lines.push(`  ▶ ${week.weekLabel} (${week.weekStart} ~ ${week.weekEnd})  [${weekTotal}件]`)
           lines.push('  ' + '-'.repeat(totalWidth - 2))
-          lines.push('    件号          序号        件名                  飞机    位置    处理方式  进度      到寿日期    剩余循环  备注')
+          lines.push('    件号          序号        件名                  飞机    位置    处理方式  进度      到寿日期    剩余循环  最近改期原因')
           lines.push('  ' + '-'.repeat(totalWidth - 2))
 
           for (const ag of week.aircraftGroups) {
             for (const { slot, part } of ag.slots) {
               const daysLeft = differenceInDays(new Date(part.calendarLifeExpiry), new Date())
+              const rescheduleNote = slot.rescheduleReason ? `[${slot.rescheduleReason}]` : '-'
               lines.push(
                 `    ${part.partNumber.padEnd(14)}` +
                 `${part.serialNumber.padEnd(12)}` +
@@ -597,7 +765,7 @@ export const useStore = create<AppState>()(
                 `${PROGRESS_LABELS[slot.progress].padEnd(10)}` +
                 `${part.calendarLifeExpiry.padEnd(12)}` +
                 `${String(part.remainingCycles).padStart(8)} ` +
-                `${slot.note || '-'}`
+                `${rescheduleNote}`
               )
             }
             if (ag.isOverloaded) {
@@ -612,7 +780,7 @@ export const useStore = create<AppState>()(
 
         lines.push('')
         lines.push('='.repeat(totalWidth))
-        lines.push(`  总计: 风险件 ${allRiskParts.length} 件 | 未排程 ${unscheduledParts.length} 件 | 已排程 ${scheduledParts.length} 件 | 8周窗口 ${totalScheduled} 件次`)
+        lines.push(`  总计: 风险件 ${reportData.unscheduled.length + reportData.inWindow.length} 件 | 未排程 ${reportData.unscheduled.length} 件 | 已排窗口 ${reportData.inWindow.length} 件 | 已关闭 ${reportData.closed.length} 件 | 8周窗口 ${totalScheduled} 件次`)
         lines.push('='.repeat(totalWidth))
 
         return lines.join('\n')

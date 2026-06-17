@@ -45,6 +45,10 @@ export interface MaintenanceSlot {
   progress: SlotProgress
   progressUpdatedAt: string
   note: string
+  rescheduleReason: string
+  closeReason: string
+  closedBy: string | null
+  closedAt: string | null
 }
 
 export interface HandoverNote {

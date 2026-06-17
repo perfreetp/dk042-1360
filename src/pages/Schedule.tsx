@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import { differenceInDays, addDays, format, parseISO, isWithinInterval, startOfDay } from 'date-fns'
+import { differenceInDays, addDays, format, parseISO, isWithinInterval, startOfDay, startOfISOWeek, addWeeks } from 'date-fns'
 import {
   DndContext,
   DragOverlay,
@@ -41,6 +41,7 @@ import type {
   SlotProgress,
 } from '@/types'
 import HandoverNotePanel from '@/components/HandoverNotePanel'
+import ScheduleReportPreview from '@/components/ScheduleReportPreview'
 
 function RiskIcon({ level }: { level: RiskLevel }) {
   const colorMap: Record<RiskLevel, string> = {
@@ -352,16 +353,21 @@ const CALENDAR_PRESETS = [30, 60, 90] as const
 export default function Schedule() {
   const getRiskParts = useStore((s) => s.getRiskParts)
   const getWeeksData = useStore((s) => s.getWeeksData)
+  const getSlotByPartId = useStore((s) => s.getSlotByPartId)
+  const updateSlotProgress = useStore((s) => s.updateSlotProgress)
   const exportScheduleReport = useStore((s) => s.exportScheduleReport)
   const riskFilter = useStore((s) => s.riskFilter)
   const setRiskFilter = useStore((s) => s.setRiskFilter)
   const addSlot = useStore((s) => s.addSlot)
   const updatePartScheduleStatus = useStore((s) => s.updatePartScheduleStatus)
+  const [showReportPreview, setShowReportPreview] = useState(false)
   const [activePart, setActivePart] = useState<LifeLimitedPart | null>(null)
   const [scheduleModalPart, setScheduleModalPart] = useState<LifeLimitedPart | null>(null)
   const [selectedSlotType, setSelectedSlotType] = useState<SlotType>('order')
   const [selectedProgress, setSelectedProgress] = useState<SlotProgress>('pending')
   const [selectedWeek, setSelectedWeek] = useState<string>('')
+  const [rescheduleReason, setRescheduleReason] = useState('')
+  const [closeReason, setCloseReason] = useState('')
   const [notePartId, setNotePartId] = useState<string | null>(null)
   const [cycleInput, setCycleInput] = useState(
     riskFilter.maxRemainingCycles?.toString() || '3000'
@@ -385,6 +391,22 @@ export default function Schedule() {
     []
   )
 
+  const existingSlot = scheduleModalPart ? getSlotByPartId(scheduleModalPart.id) : null
+  const isReschedule = existingSlot !== null
+
+  function getPartScheduleWeek(dateStr: string): string {
+    const slotDate = new Date(dateStr)
+    const startOfThisWeek = startOfISOWeek(new Date())
+    for (let w = 0; w < 52; w++) {
+      const ws = addWeeks(startOfThisWeek, w)
+      const we = addWeeks(ws, 1)
+      if (isWithinInterval(slotDate, { start: ws, end: we })) {
+        return `第${w + 1}周`
+      }
+    }
+    return '-'
+  }
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setActivePart(null)
     const { active, over } = event
@@ -398,11 +420,18 @@ export default function Schedule() {
       setScheduleModalPart(part)
       setSelectedWeek(weekDateStr)
       setSelectedProgress('pending')
+      setRescheduleReason('')
+      setCloseReason('')
     }
   }, [])
 
   const handleScheduleConfirm = () => {
     if (!scheduleModalPart || !selectedWeek) return
+    const isClosing = selectedProgress === 'completed'
+    if (isClosing && !closeReason.trim()) {
+      alert('请填写完成说明或更换依据')
+      return
+    }
     addSlot({
       partId: scheduleModalPart.id,
       aircraft: scheduleModalPart.installedAircraft,
@@ -410,6 +439,8 @@ export default function Schedule() {
       type: selectedSlotType,
       note: '',
       progress: selectedProgress,
+      rescheduleReason: isReschedule ? rescheduleReason : '',
+      closeReason: isClosing ? closeReason : '',
     })
     const statusMap: Record<SlotType, ScheduleStatus> = {
       order: 'need_order',
@@ -418,6 +449,8 @@ export default function Schedule() {
     }
     updatePartScheduleStatus(scheduleModalPart.id, statusMap[selectedSlotType])
     setScheduleModalPart(null)
+    setRescheduleReason('')
+    setCloseReason('')
   }
 
   const handleCycleChange = (val: string) => {
@@ -558,11 +591,11 @@ export default function Schedule() {
               <span className="text-xs text-cockpit-400 ml-2">未来 8 周排程</span>
               <span className="text-[10px] text-cockpit-400/80 ml-2">（按飞机号分组）</span>
               <button
-                onClick={handleExport}
+                onClick={() => setShowReportPreview(true)}
                 className="ml-auto flex items-center gap-1.5 px-3 py-1.5 cockpit-btn-primary text-xs"
               >
-                <Download className="w-3.5 h-3.5" />
-                导出交班报表
+                <Calendar className="w-3.5 h-3.5" />
+                预览交班报表
               </button>
             </div>
           </div>
@@ -622,16 +655,33 @@ export default function Schedule() {
           <div className="drawer-overlay" onClick={() => setScheduleModalPart(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div
-              className="cockpit-card w-[440px] p-6 shadow-2xl border-amber/30"
+              className={`cockpit-card w-[520px] p-6 shadow-2xl ${
+                isReschedule ? 'border-violet-500/30' : 'border-amber/30'
+              }`}
               style={{ animation: 'fadeIn 0.2s ease-out' }}
             >
               <style>{`@keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }`}</style>
-              <h3 className="text-lg font-bold text-cockpit-50 mb-1">排入检修窗口</h3>
+              <h3 className="text-lg font-bold text-cockpit-50 mb-1 flex items-center gap-2">
+                {isReschedule ? (
+                  <span className="text-violet-400">改期操作</span>
+                ) : (
+                  <span>排入检修窗口</span>
+                )}
+              </h3>
               <p className="text-sm text-cockpit-300 mb-4">
                 <span className="font-mono text-cyan">{scheduleModalPart.partNumber}</span>
                 {' '}{scheduleModalPart.partName}
                 {' '}→ {scheduleModalPart.installedAircraft}
               </p>
+
+              {isReschedule && existingSlot && (
+                <div className="mb-4 p-3 bg-violet-500/10 border border-violet-500/30 rounded-lg">
+                  <p className="text-xs text-violet-300 mb-1">当前计划位置</p>
+                  <p className="font-mono text-sm text-violet-200">
+                    排程周: {getPartScheduleWeek(existingSlot.plannedDate)} · 处理方式: {SLOT_TYPE_LABELS[existingSlot.type]} · 进度: {PROGRESS_LABELS[existingSlot.progress]}
+                  </p>
+                </div>
+              )}
 
               <div className="mb-4">
                 <p className="text-xs text-cockpit-400 mb-2">选择处理方式</p>
@@ -662,7 +712,6 @@ export default function Schedule() {
                 <p className="text-xs text-cockpit-400 mb-2">处理进度</p>
                 <div className="grid grid-cols-5 gap-1">
                   {PROGRESS_STEPS.map((step) => {
-                    const idx = PROGRESS_STEPS.indexOf(step)
                     const isSelected = selectedProgress === step
                     const colorClass = isSelected
                       ? 'bg-amber/20 text-amber border-amber/50'
@@ -684,9 +733,43 @@ export default function Schedule() {
                 </p>
               </div>
 
+              {isReschedule && (
+                <div className="mb-4">
+                  <label className="text-xs text-cockpit-400 mb-1 block">
+                    改期原因 <span className="text-violet-400">（建议填写）</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={rescheduleReason}
+                    onChange={(e) => setRescheduleReason(e.target.value)}
+                    placeholder="例如：原周与定检冲突、件延迟到货..."
+                    className="w-full px-3 py-2 cockpit-input text-sm"
+                  />
+                </div>
+              )}
+
+              {selectedProgress === 'completed' && (
+                <div className="mb-4">
+                  <label className="text-xs text-cockpit-400 mb-1 block">
+                    完成说明 / 更换依据 <span className="text-risk-critical">*</span>
+                  </label>
+                  <textarea
+                    value={closeReason}
+                    onChange={(e) => setCloseReason(e.target.value)}
+                    placeholder="例如：已更换为新件，依据工卡55-30-10；或已送修返回，报告号RPT-2025-0123..."
+                    rows={2}
+                    className="w-full px-3 py-2 cockpit-input text-sm resize-none"
+                    required
+                  />
+                  <p className="text-[10px] text-cockpit-400 mt-1">
+                    关闭后将从风险列表移除，但仍可在寿命件详情和报表中追溯
+                  </p>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button onClick={handleScheduleConfirm} className="cockpit-btn-primary">
-                  确认排程
+                  {isReschedule ? '确认改期' : '确认排程'}
                 </button>
                 <button
                   onClick={() => setScheduleModalPart(null)}
@@ -698,6 +781,10 @@ export default function Schedule() {
             </div>
           </div>
         </>
+      )}
+
+      {showReportPreview && (
+        <ScheduleReportPreview onClose={() => setShowReportPreview(false)} />
       )}
     </DndContext>
   )
